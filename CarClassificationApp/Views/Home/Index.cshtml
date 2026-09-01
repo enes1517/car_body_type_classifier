@@ -1,0 +1,278 @@
+@{
+    ViewData["Title"] = "Araba Gövde Tipi Sınıflandırma";
+}
+
+<style>
+    body {
+        background: linear-gradient(135deg, #1e1e2f, #2c2c3e);
+        color: #ffffff;
+        font-family: 'Inter', sans-serif;
+        min-height: 100vh;
+    }
+    .glass-card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        padding: 30px;
+        margin-top: 20px;
+        transition: transform 0.3s ease;
+    }
+    .upload-area {
+        border: 2px dashed rgba(255,255,255,0.3);
+        border-radius: 15px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: rgba(0,0,0,0.1);
+    }
+    .upload-area:hover, .upload-area.dragover {
+        border-color: #00d2ff;
+        background: rgba(0, 210, 255, 0.05);
+    }
+    .btn-premium {
+        background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+        border: none;
+        color: white;
+        padding: 12px 30px;
+        border-radius: 30px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+    }
+    .btn-premium:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 210, 255, 0.5);
+        color: white;
+    }
+    #imagePreview {
+        max-width: 100%;
+        max-height: 400px;
+        border-radius: 10px;
+        display: none;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    }
+    .result-text {
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: -webkit-linear-gradient(#00d2ff, #3a7bd5);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 20px;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+    }
+    /* Hide default file input */
+    #fileInput {
+        display: none;
+    }
+</style>
+
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold">Araba Gövde Tipi Sınıflandırma</h1>
+        <p class="lead text-light">Yapay Zeka ile Aracın Gövde Tipini Anında Keşfedin</p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Sol Panel: Yükleme ve Önizleme -->
+        <div class="col-lg-6">
+            <div class="glass-card text-center h-100 d-flex flex-column justify-content-center align-items-center">
+                
+                <div class="upload-area w-100 mb-4" id="uploadArea">
+                    <i class="bi bi-cloud-arrow-up display-1 mb-3"></i>
+                    <h4>Görseli Sürükleyin veya Tıklayın</h4>
+                    <p class="text-muted">Desteklenen formatlar: JPG, PNG</p>
+                    <input type="file" id="fileInput" accept="image/*" />
+                </div>
+
+                <img id="imagePreview" alt="Önizleme" class="mb-4" />
+
+                <button class="btn btn-premium w-100" id="classifyBtn" style="display: none;">
+                    <i class="bi bi-cpu me-2"></i>Sınıflandır
+                </button>
+                
+                <div class="spinner-border text-info mt-3" role="status" id="loadingSpinner" style="display:none;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sağ Panel: Sonuçlar -->
+        <div class="col-lg-6">
+            <div class="glass-card h-100 d-flex flex-column justify-content-center" id="resultsCard" style="opacity: 0.5; pointer-events: none;">
+                
+                <div class="text-center">
+                    <h5 class="text-muted text-uppercase mb-2">Tahmin Sonucu</h5>
+                    <div class="result-text" id="predictedClass">-</div>
+                </div>
+
+                <hr class="border-secondary my-4" />
+
+                <h5 class="text-center mb-4">Olasılık Dağılımı</h5>
+                <div class="chart-container">
+                    <canvas id="probabilityChart"></canvas>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js ve Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const resultsCard = document.getElementById('resultsCard');
+        const predictedClassText = document.getElementById('predictedClass');
+        
+        let selectedFile = null;
+        let chartInstance = null;
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        // Drag and drop events
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // File input change
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Lütfen geçerli bir resim dosyası yükleyin.');
+                return;
+            }
+            selectedFile = file;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.src = e.target.result;
+                imagePreview.style.display = 'block';
+                uploadArea.style.display = 'none';
+                classifyBtn.style.display = 'block';
+                
+                // Reset results
+                resultsCard.style.opacity = '0.5';
+                predictedClassText.innerText = '-';
+                if(chartInstance) chartInstance.destroy();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        classifyBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            classifyBtn.style.display = 'none';
+            loadingSpinner.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+
+            try {
+                const response = await fetch('/Home/Classify', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) throw new Error('Sınıflandırma hatası.');
+                
+                const data = await response.json();
+                
+                predictedClassText.innerText = data.predictedClass;
+                resultsCard.style.opacity = '1';
+                resultsCard.style.pointerEvents = 'auto';
+
+                drawChart(data.probabilities);
+
+            } catch (error) {
+                alert(error.message);
+                classifyBtn.style.display = 'block';
+            } finally {
+                loadingSpinner.style.display = 'none';
+                // Allow re-classification or upload another by clicking image
+                classifyBtn.style.display = 'block';
+                classifyBtn.innerText = "Tekrar Sınıflandır";
+            }
+        });
+
+        imagePreview.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        function drawChart(probabilities) {
+            const ctx = document.getElementById('probabilityChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            const labels = probabilities.map(p => p.className);
+            const data = probabilities.map(p => (p.probability * 100).toFixed(2));
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Olasılık (%)',
+                        data: data,
+                        backgroundColor: 'rgba(0, 210, 255, 0.6)',
+                        borderColor: 'rgba(0, 210, 255, 1)',
+                        borderWidth: 1,
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y', // Yatay bar chart
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#fff' }
+                        },
+                        y: {
+                            grid: { display: false },
+                            ticks: { color: '#fff', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+    });
+</script>
